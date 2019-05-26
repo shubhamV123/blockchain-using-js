@@ -1,12 +1,17 @@
 const sha256 = require('sha256');
+const currentNodeURL = process.argv[3];
+const uuid = require('uuid/v1');
 
 /*
 Blockchain is pretty much a list of blocks.Every single block has to be created and added to chain
 .Proof of Work ensure that our blockchain are secure.
  */
 function BlockChain() {
+    console.log(process.argv, currentNodeURL);
     this.chain = []; //All of the blocks that we mine will be stored in this particular array as a chain
     this.pendingTransaction = []; //All of the new transactions that are created before they are placed into a block.
+    this.currentNodeURL = currentNodeURL;
+    this.networkNodes = [];
     this.createNewBlock(100, '0', '0');// first block in any blockchain also known as genesis block
 }
 BlockChain.prototype.createNewBlock = function (nonce, previousBlockHash, hash) {
@@ -37,10 +42,12 @@ BlockChain.prototype.createNewTransaction = function (amount, sender, recipient)
     const newTransaction = {
         amount,
         sender,
-        recipient
+        recipient,
+        transactionId: uuid().split('-').join('')
     }
-    this.pendingTransaction.push(newTransaction);
-    return this.getLastBlock()['index'] + 1
+    // this.pendingTransaction.push(newTransaction);
+    // return this.getLastBlock()['index'] + 1
+    return newTransaction;
 }
 //For generation hash function we are going to use sha256
 //currentBlockData simply array of transcations present in this block
@@ -63,4 +70,85 @@ BlockChain.prototype.proofOfWork = function (previousBlockHash, currentBlockData
     }
     return nonce;
 }
+
+BlockChain.prototype.addTransactionToPendingTransactions = function (transactionObj) {
+    this.pendingTransaction.push({ ...transactionObj, transactionId: uuid().split('-').join('') });
+    return this.getLastBlock()['index'] + 1;
+}
+
+BlockChain.prototype.chainIsValid = function (blockchain) {
+    let validChain = true;
+    const genesisBlock = blockchain[0];
+    const correctNonce = genesisBlock['nonce'] === 100;
+    const correctPreviousBlockHash = genesisBlock['previousBlockHash'] === '0';
+    const correctHash = genesisBlock['hash'] === '0';
+    const correctTransactions = genesisBlock['transactions'].length === 0;
+    if (!correctNonce || !correctPreviousBlockHash || !correctHash || !correctTransactions) validChain = false;
+
+    for (var i = 1; i < blockchain.length; i++) {
+        const currentBlock = blockchain[i];
+        const previousBlock = blockchain[i - 1];
+        const blockHash = this.hashBlock(previousBlock['hash'], { transactions: currentBlock['transactions'], index: currentBlock['index'] }, currentBlock['nonce'])
+        if (currentBlock['previousBlockHash'] !== previousBlock['hash']) {//chain is not valid
+            validChain = false
+        }
+        if (blockHash.substring(0, 4) !== '0000') validChain = false;
+    }
+    return validChain;
+};
+//Get the particular block from blockchain which consist this hash
+BlockChain.prototype.getBlock = function (blockHash) {
+    let correctBlock = null;
+    this.chain.forEach(block => {
+        if (block.hash === blockHash) {
+            correctBlock = block
+        }
+    });
+    return correctBlock;
+};
+//Get the particular transaction from blockchain which consist this transactionId
+BlockChain.prototype.getTransaction = function (transactionId) {
+    let correctTransaction = null;
+    let correctBlock = null;
+
+    this.chain.forEach(block => {
+        block.transactions.forEach(transaction => {
+            if (transaction.transactionId === transactionId) {
+                correctTransaction = transaction;
+                correctBlock = block;
+            }
+        })
+    });
+    return { transaction: correctTransaction, block: correctBlock };
+};
+
+//Get the data for specific address 
+BlockChain.prototype.getAddressData = function (address) {
+
+    const addressTransactions = [];
+    let balance = 0;
+    this.chain.forEach(block => {
+        block.transactions.forEach(transaction => {
+            let { sender, recipient } = transaction;
+            if (sender === address || recipient === address) {
+                addressTransactions.push(transaction)
+            }
+        })
+    });
+    addressTransactions.forEach(transaction => {
+        let { sender, recipient, amount } = transaction;
+        if (recipient === address) {
+            balance = balance + amount
+        }
+        else if (sender === address) {
+            balance = balance - amount;
+        }
+    });
+    return {
+        addressTransactions,
+        addressBalance: balance
+    }
+
+};
+
 module.exports = BlockChain;
